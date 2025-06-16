@@ -1,0 +1,10 @@
+
+Flask==3.1.1
+boto3==1.38.36
+botocore==1.38.36
+requests==2.31.0
+
+# Типизация для boto3 (опционально, только если используешь её в dev-окружении)
+boto3-stubs[essential,s3]==1.34.89
+python-dotenv==1.0.1
+gunicorn==23.0.0
