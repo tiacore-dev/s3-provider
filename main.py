@@ -1,11 +1,9 @@
 import hashlib
-import json
 import os
 from functools import wraps
 from typing import Optional
 
 import boto3
-import requests
 from botocore.client import Config
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
@@ -104,34 +102,34 @@ def get_request(file_id):
 @app.route("/post-object", methods=["POST"])
 @requires_secret_key
 def post_request():
-    data = request.json  # Получаем данные из тела запроса
+    data = request.json
     if not data:
         return jsonify({"error": "No JSON data provided"}), 400
 
     try:
-        # response = json.loads(data)
-        response_body = data["data"]
-        response_ext = data["ext"]
-        hash = hash_string(response_body, "sha256")
-        s3_file_key = f"{hash}.{response_ext}"
+        b64_string = data["data_base64"]
+        extension = data["ext"]  # например, "b64" или "txt" — или "png.b64"
+
+        # Хеш от строки
+        hash = hash_string(b64_string)
+
+        s3_file_key = f"{hash}.{extension}"
+
         if not bucket_name:
             raise RuntimeError("BUCKET_NAME is not set")
-        # проверяем есть ли уже такой объект в бакете
-        response = s3.list_objects_v2(Bucket=bucket_name)
+
         if not object_exists(bucket_name, s3_file_key):
             s3.put_object(
                 Bucket=bucket_name,
                 Key=s3_file_key,
-                Body=json.dumps(response_body).encode("utf-8"),
-                ContentType="application/json",
+                Body=b64_string.encode("utf-8"),
+                ContentType="text/plain",  # 🔥 ВАЖНО: это НЕ JSON и НЕ image/*
             )
-
-            response = {"status": "created", "data": s3_file_key}
+            return jsonify({"status": "created", "data": s3_file_key})
         else:
-            response = {"status": "exists", "data": s3_file_key}
-        return jsonify(response)
+            return jsonify({"status": "exists", "data": s3_file_key})
 
-    except requests.RequestException as e:
+    except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
