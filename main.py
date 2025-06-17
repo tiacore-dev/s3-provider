@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import os
 from functools import wraps
 from typing import Optional
@@ -22,6 +23,7 @@ s3: S3Client = boto3.client(
     config=Config(s3={"addressing_style": "path"}),
 )
 file_service_secret_key = os.getenv("SECRET_KEY")
+logging.info(f"secret key: {file_service_secret_key}")
 bucket_name = os.getenv("BUCKET_NAME")
 
 
@@ -48,9 +50,8 @@ def get_object_content(key: str) -> Optional[str]:
 
 
 def hash_string(data: str, algorithm: str = "sha256") -> str:
-    # Создаем объект хэш-функции
     hash_obj = hashlib.new(algorithm)
-    # Обновляем объект хэш-функции данными (строка должна быть закодирована в байты)
+
     hash_obj.update(data.encode("utf-8"))
     # Получаем хэш-сумму в виде шестнадцатеричной строки
     return hash_obj.hexdigest()
@@ -59,10 +60,8 @@ def hash_string(data: str, algorithm: str = "sha256") -> str:
 def requires_secret_key(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Получаем secret_key из заголовков запроса
         secret_key = request.headers.get("key")
-
-        # Проверяем, совпадает ли он с правильным значением
+        logging.info(f"полученный секретный ключ: {secret_key}")
         if secret_key != file_service_secret_key:
             return jsonify({"error": "Invalid secret key"}), 403
 
