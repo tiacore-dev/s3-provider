@@ -5,6 +5,7 @@ from functools import wraps
 from typing import Optional
 
 import boto3
+import requests
 from botocore.client import Config
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
@@ -108,54 +109,34 @@ def get_request(file_id):
 @app.route("/post-object", methods=["POST"])
 @requires_secret_key
 def post_request():
+    data = request.json  # Получаем данные из тела запроса
+    if not data:
+        return jsonify({"error": "No JSON data provided"}), 400
+    if not bucket_name:
+        raise RuntimeError("BUCKET_NAME is not set")
     try:
-        logger.info("📩 Получен POST /post-object")
-
-        data = request.json
-        if not data:
-            logger.info("⛔️ Нет JSON в теле запроса")
-            return jsonify({"error": "No JSON data provided"}), 400
-
-        b64_string = data.get("data_base64")
-        extension = data.get("ext")
-
-        logger.info(f"📄 Расширение: {extension}")
-        logger.info(
-            f"🔠 Base64 длина строки: {len(b64_string) if b64_string else 'None'}"
-        )
-
-        if not b64_string or not extension:
-            logger.info("⛔️ Не хватает ключей 'data_base64' или 'ext'")
-            return jsonify({"error": "Missing required fields"}), 400
-
-        hash = hash_string(b64_string)
-        s3_file_key = f"{hash}.{extension}"
-
-        logger.info(f"🔑 S3 ключ: {s3_file_key}")
-
-        if not bucket_name:
-            raise RuntimeError("BUCKET_NAME is not set")
-
-        logger.info(f"🪣 Проверяем наличие объекта: {bucket_name}/{s3_file_key}")
-        exists = object_exists(bucket_name, s3_file_key)
-        logger.info(f"📦 Объект уже существует? {'Да' if exists else 'Нет'}")
-
-        if not exists:
-            logger.info("📤 Загружаем объект в S3...")
+        # response = json.loads(data)
+        response_body = data["data"]
+        response_ext = data["ext"]
+        hash = hash_string(response_body, "sha256")
+        s3_file_key = f"{hash}.{response_ext}"
+        # проверяем есть ли уже такой объект в бакете
+        response = s3.list_objects_v2(Bucket=bucket_name)
+        if not object_exists(bucket_name, s3_file_key):
             s3.put_object(
                 Bucket=bucket_name,
                 Key=s3_file_key,
-                Body=b64_string.encode("utf-8"),
-                ContentType="text/plain",
+                Body=response_body.encode("utf-8"),  # Преобразуем строку в байты
+                ContentType="application/json",
             )
-            logger.info("✅ Объект загружен")
-            return jsonify({"status": "created", "data": s3_file_key})
+            # print(f'JSON-данные успешно загружены в {bucket_name}/{s3_file_key}')
+            response = {"status": "created", "data": s3_file_key}
         else:
-            logger.info("ℹ️ Объект уже существует")
-            return jsonify({"status": "exists", "data": s3_file_key})
+            # print('Такой файл уже существует')
+            response = {"status": "exists", "data": s3_file_key}
+        return jsonify(response)
 
-    except Exception as e:
-        logger.info(f"🔥 Ошибка: {type(e).__name__}: {str(e)}")
+    except requests.RequestException as e:
         return jsonify({"error": str(e)}), 500
 
 
