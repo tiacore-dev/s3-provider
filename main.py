@@ -1,5 +1,4 @@
 import hashlib
-import logging
 import os
 from functools import wraps
 from typing import Optional
@@ -8,11 +7,13 @@ import boto3
 import requests
 from botocore.client import Config
 from botocore.exceptions import ClientError
+from dotenv import load_dotenv
 from flask import Flask, abort, jsonify, request
 from mypy_boto3_s3.client import S3Client
 
 app = Flask(__name__)
 
+load_dotenv()
 
 s3: S3Client = boto3.client(
     "s3",
@@ -23,7 +24,7 @@ s3: S3Client = boto3.client(
     config=Config(s3={"addressing_style": "path"}),
 )
 file_service_secret_key = os.getenv("SECRET_KEY")
-logging.info(f"secret key: {file_service_secret_key}")
+
 bucket_name = os.getenv("BUCKET_NAME")
 
 
@@ -61,7 +62,7 @@ def requires_secret_key(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         secret_key = request.headers.get("key")
-        logging.info(f"полученный секретный ключ: {secret_key}")
+
         if secret_key != file_service_secret_key:
             return jsonify({"error": "Invalid secret key"}), 403
 
