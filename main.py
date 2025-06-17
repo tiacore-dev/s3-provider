@@ -10,7 +10,6 @@ from botocore.client import Config
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 from flask import Flask, abort, jsonify, request
-from mypy_boto3_s3.client import S3Client
 
 app = Flask(__name__)
 
@@ -21,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-s3: S3Client = boto3.client(
+s3 = boto3.client(
     "s3",
     endpoint_url=os.getenv("ENDPOINT_URL"),
     region_name=os.getenv("REGION_NAME"),
