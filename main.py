@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import os
 from functools import wraps
 from typing import Optional
@@ -11,6 +12,11 @@ from flask import Flask, abort, jsonify, request
 from mypy_boto3_s3.client import S3Client
 
 app = Flask(__name__)
+
+logging.basicConfig(
+    level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -83,7 +89,7 @@ def get_request(file_id):
     # file_id = request.args.get('file_id')
 
     # Отладочный вывод
-    print(f"Received request with file_id: {file_id}")
+    logger.info(f"Received request with file_id: {file_id}")
 
     if not file_id:
         abort(400, description="Параметр 'file_id' обязателен.")
@@ -102,34 +108,54 @@ def get_request(file_id):
 @app.route("/post-object", methods=["POST"])
 @requires_secret_key
 def post_request():
-    data = request.json
-    if not data:
-        return jsonify({"error": "No JSON data provided"}), 400
-
     try:
-        b64_string = data["data_base64"]
-        extension = data["ext"]  # например, "b64" или "txt" — или "png.b64"
+        logger.info("📩 Получен POST /post-object")
 
-        # Хеш от строки
+        data = request.json
+        if not data:
+            logger.info("⛔️ Нет JSON в теле запроса")
+            return jsonify({"error": "No JSON data provided"}), 400
+
+        b64_string = data.get("data_base64")
+        extension = data.get("ext")
+
+        logger.info(f"📄 Расширение: {extension}")
+        logger.info(
+            f"🔠 Base64 длина строки: {len(b64_string) if b64_string else 'None'}"
+        )
+
+        if not b64_string or not extension:
+            logger.info("⛔️ Не хватает ключей 'data_base64' или 'ext'")
+            return jsonify({"error": "Missing required fields"}), 400
+
         hash = hash_string(b64_string)
-
         s3_file_key = f"{hash}.{extension}"
+
+        logger.info(f"🔑 S3 ключ: {s3_file_key}")
 
         if not bucket_name:
             raise RuntimeError("BUCKET_NAME is not set")
 
-        if not object_exists(bucket_name, s3_file_key):
+        logger.info(f"🪣 Проверяем наличие объекта: {bucket_name}/{s3_file_key}")
+        exists = object_exists(bucket_name, s3_file_key)
+        logger.info(f"📦 Объект уже существует? {'Да' if exists else 'Нет'}")
+
+        if not exists:
+            logger.info("📤 Загружаем объект в S3...")
             s3.put_object(
                 Bucket=bucket_name,
                 Key=s3_file_key,
                 Body=b64_string.encode("utf-8"),
-                ContentType="text/plain",  # 🔥 ВАЖНО: это НЕ JSON и НЕ image/*
+                ContentType="text/plain",
             )
+            logger.info("✅ Объект загружен")
             return jsonify({"status": "created", "data": s3_file_key})
         else:
+            logger.info("ℹ️ Объект уже существует")
             return jsonify({"status": "exists", "data": s3_file_key})
 
     except Exception as e:
+        logger.info(f"🔥 Ошибка: {type(e).__name__}: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 
