@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 from functools import wraps
 from typing import Optional
@@ -21,7 +22,7 @@ s3: S3Client = boto3.client(
     region_name=os.getenv("REGION_NAME"),
     aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
     aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-    config=Config(s3={"addressing_style": "path"}),
+    config=Config(signature_version="s3v4"),
 )
 file_service_secret_key = os.getenv("SECRET_KEY")
 
@@ -121,7 +122,7 @@ def post_request():
             s3.put_object(
                 Bucket=bucket_name,
                 Key=s3_file_key,
-                Body=response_body.encode("utf-8"),  # Преобразуем строку в байты
+                Body=json.dumps(response_body).encode("utf-8"),
                 ContentType="application/json",
             )
 
