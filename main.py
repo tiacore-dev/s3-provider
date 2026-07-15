@@ -82,26 +82,24 @@ def home():
     return "The service is running."
 
 
-@app.route("/get-object/<file_id>", methods=["GET"])
+@app.route("/get-object", methods=["GET"])
 @requires_secret_key
-def get_request(file_id):
-    # Получаем имя объекта из параметров запроса
-    # file_id = request.args.get('file_id')
+def get_request():
+    s3_key = request.args.get("s3_key")
 
-    # Отладочный вывод
-    logger.info(f"Received request with file_id: {file_id}")
+    logger.info("Received request with s3_key: %s", s3_key)
 
-    if not file_id:
-        abort(400, description="Параметр 'file_id' обязателен.")
+    if not s3_key:
+        abort(400, description="Query-параметр 's3_key' обязателен.")
+
     if not bucket_name:
         raise RuntimeError("BUCKET_NAME is not set")
-    if not object_exists(bucket_name, file_id):
+
+    if not object_exists(bucket_name, s3_key):
         abort(404, description="Объект не найден.")
 
-    # Получаем содержимое объекта
-    content = get_object_content(file_id)
+    content = get_object_content(s3_key)
 
-    # Возвращаем содержимое объекта в виде ответа
     return jsonify({"content": content})
 
 
