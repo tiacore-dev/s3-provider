@@ -2,14 +2,13 @@ import hashlib
 import logging
 import os
 from functools import wraps
-from typing import Optional
 
 import boto3
 import requests
 from botocore.client import Config
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
-from flask import Flask, abort, jsonify, request
+from flask import Flask, Response, abort, jsonify, request
 
 app = Flask(__name__)
 
@@ -43,15 +42,28 @@ def object_exists(bucket: str, key: str) -> bool:
         raise
 
 
-def get_object_content(key: str) -> Optional[str]:
+def get_object_content(key: str):
     try:
         if not bucket_name:
             raise RuntimeError("BUCKET_NAME is not set")
-        response = s3.get_object(Bucket=bucket_name, Key=key)
-        return response["Body"].read().decode("utf-8")
+
+        response = s3.get_object(
+            Bucket=bucket_name,
+            Key=key,
+        )
+
+        return {
+            "body": response["Body"].read(),
+            "content_type": response.get("ContentType", "application/octet-stream"),
+            "content_length": response.get("ContentLength"),
+        }
+
     except ClientError as e:
-        if e.response.get("Error", {}).get("Code") == "404":
+        error_code = e.response.get("Error", {}).get("Code")
+
+        if error_code in {"404", "NoSuchKey"}:
             return None
+
         raise
 
 
@@ -95,12 +107,21 @@ def get_request():
     if not bucket_name:
         raise RuntimeError("BUCKET_NAME is not set")
 
-    if not object_exists(bucket_name, s3_key):
+    result = get_object_content(s3_key)
+
+    if result is None:
         abort(404, description="Объект не найден.")
 
-    content = get_object_content(s3_key)
+    response = Response(
+        result["body"],
+        status=200,
+        content_type=result["content_type"],
+    )
 
-    return jsonify({"content": content})
+    if result["content_length"] is not None:
+        response.headers["Content-Length"] = str(result["content_length"])
+
+    return response
 
 
 @app.route("/post-object", methods=["POST"])
