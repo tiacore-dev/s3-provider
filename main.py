@@ -1,3 +1,5 @@
+import base64
+import binascii
 import hashlib
 import logging
 import os
@@ -43,15 +45,58 @@ def object_exists(bucket: str, key: str) -> bool:
         raise
 
 
+def is_base64_string(value: str) -> bool:
+    """
+    Проверяет, является ли строка корректной Base64-строкой.
+    Пробелы и переносы строк при проверке игнорируются.
+    """
+    normalized_value = "".join(value.split())
+
+    if not normalized_value:
+        return False
+
+    try:
+        base64.b64decode(normalized_value, validate=True)
+        return True
+    except (binascii.Error, ValueError):
+        return False
+
+
 def get_object_content(key: str) -> Optional[str]:
     try:
         if not bucket_name:
             raise RuntimeError("BUCKET_NAME is not set")
-        response = s3.get_object(Bucket=bucket_name, Key=key)
-        return response["Body"].read().decode("utf-8")
+
+        response = s3.get_object(
+            Bucket=bucket_name,
+            Key=key,
+        )
+
+        body = response["Body"].read()
+
+        # Старый формат: в S3 лежит текстовая Base64-строка.
+        try:
+            text_content = body.decode("utf-8")
+
+            if is_base64_string(text_content):
+                logger.debug("Object %s already contains Base64 content", key)
+                return text_content
+
+        except UnicodeDecodeError:
+            # Бинарный файл, например JPEG.
+            pass
+
+        # Новый формат: в S3 лежат бинарные данные.
+        logger.debug("Object %s contains binary data; encoding to Base64", key)
+
+        return base64.b64encode(body).decode("ascii")
+
     except ClientError as e:
-        if e.response.get("Error", {}).get("Code") == "404":
+        error_code = e.response.get("Error", {}).get("Code")
+
+        if error_code in {"404", "NoSuchKey", "NotFound"}:
             return None
+
         raise
 
 
@@ -85,24 +130,21 @@ def home():
 @app.route("/get-object", methods=["GET"])
 @requires_secret_key
 def get_request():
-    # Получаем имя объекта из параметров запроса
-    # file_id = request.args.get('file_id')
     s3_key = request.args.get("s3_key")
 
-    # Отладочный вывод
-    logger.info(f"Received request with s3_key: {s3_key}")
+    logger.info("Received request with s3_key: %s", s3_key)
 
     if not s3_key:
-        abort(400, description="Параметр 'file_id' обязателен.")
+        abort(400, description="Параметр 's3_key' обязателен.")
+
     if not bucket_name:
         raise RuntimeError("BUCKET_NAME is not set")
-    if not object_exists(bucket_name, s3_key):
-        abort(404, description="Объект не найден.")
 
-    # Получаем содержимое объекта
     content = get_object_content(s3_key)
 
-    # Возвращаем содержимое объекта в виде ответа
+    if content is None:
+        abort(404, description="Объект не найден.")
+
     return jsonify({"content": content})
 
 
