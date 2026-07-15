@@ -84,7 +84,7 @@ def home():
 
 @app.route("/get-object", methods=["GET"])
 @requires_secret_key
-def get_request(file_id):
+def get_request():
     # Получаем имя объекта из параметров запроса
     # file_id = request.args.get('file_id')
     s3_key = request.args.get("s3_key")
