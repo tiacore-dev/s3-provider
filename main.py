@@ -2,13 +2,14 @@ import hashlib
 import logging
 import os
 from functools import wraps
+from typing import Optional
 
 import boto3
 import requests
 from botocore.client import Config
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
-from flask import Flask, Response, abort, jsonify, request
+from flask import Flask, abort, jsonify, request
 
 app = Flask(__name__)
 
@@ -42,28 +43,15 @@ def object_exists(bucket: str, key: str) -> bool:
         raise
 
 
-def get_object_content(key: str):
+def get_object_content(key: str) -> Optional[str]:
     try:
         if not bucket_name:
             raise RuntimeError("BUCKET_NAME is not set")
-
-        response = s3.get_object(
-            Bucket=bucket_name,
-            Key=key,
-        )
-
-        return {
-            "body": response["Body"].read(),
-            "content_type": response.get("ContentType", "application/octet-stream"),
-            "content_length": response.get("ContentLength"),
-        }
-
+        response = s3.get_object(Bucket=bucket_name, Key=key)
+        return response["Body"].read().decode("utf-8")
     except ClientError as e:
-        error_code = e.response.get("Error", {}).get("Code")
-
-        if error_code in {"404", "NoSuchKey"}:
+        if e.response.get("Error", {}).get("Code") == "404":
             return None
-
         raise
 
 
@@ -96,32 +84,26 @@ def home():
 
 @app.route("/get-object", methods=["GET"])
 @requires_secret_key
-def get_request():
+def get_request(file_id):
+    # Получаем имя объекта из параметров запроса
+    # file_id = request.args.get('file_id')
     s3_key = request.args.get("s3_key")
 
-    logger.info("Received request with s3_key: %s", s3_key)
+    # Отладочный вывод
+    logger.info(f"Received request with s3_key: {s3_key}")
 
     if not s3_key:
-        abort(400, description="Query-параметр 's3_key' обязателен.")
-
+        abort(400, description="Параметр 'file_id' обязателен.")
     if not bucket_name:
         raise RuntimeError("BUCKET_NAME is not set")
-
-    result = get_object_content(s3_key)
-
-    if result is None:
+    if not object_exists(bucket_name, s3_key):
         abort(404, description="Объект не найден.")
 
-    response = Response(
-        result["body"],
-        status=200,
-        content_type=result["content_type"],
-    )
+    # Получаем содержимое объекта
+    content = get_object_content(s3_key)
 
-    if result["content_length"] is not None:
-        response.headers["Content-Length"] = str(result["content_length"])
-
-    return response
+    # Возвращаем содержимое объекта в виде ответа
+    return jsonify({"content": content})
 
 
 @app.route("/post-object", methods=["POST"])
